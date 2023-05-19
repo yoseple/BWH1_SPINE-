@@ -1,0 +1,394 @@
+<html>
+  <head>
+    <title>My 3D Model</title>
+    <style>
+      html,
+      body {
+        background-color: #000;
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden !important;
+        
+      }
+    </style>
+    <script type="module">
+        import * as THREE from "https://cdn.skypack.dev/three@0.136.0/build/three.module.js";
+        import { GUI } from "https://cdn.skypack.dev/dat.gui@0.7.7/build/dat.gui.module.js";
+        import { TrackballControls } from "https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/TrackballControls.js";
+        import { OBJLoader } from "https://cdn.skypack.dev/three@0.136.0/examples/jsm/loaders/OBJLoader.js";
+        import * as Cannon from 'https://cdn.skypack.dev/cannon-es';
+      // Set up the scene
+      let scene, camera, renderer, ambientLight, directionalLight, controls, controller, mesh1, mesh2, mesh3, mesh4, mesh5;
+    
+      window.onload = function () {
+        console.log("Window loaded!");
+        scene = new THREE.Scene()
+        camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 10000)
+        camera.position.set(0, 2000, -200)
+        camera.lookAt(0, 0, 0)
+        console.log(camera.position);
+        console.log(camera.rotation);
+        
+
+        renderer = new THREE.WebGLRenderer({});
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+
+        directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        directionalLight.position.set(10, 10, 0);
+        scene.add(directionalLight);
+
+        // PointLight creation
+        const pointLight = new THREE.PointLight(0xffffff, 100, 100);
+        pointLight.visible = false;
+        scene.add(pointLight);
+
+        // Load a 3D model
+        const material = new THREE.MeshPhongMaterial({
+          color: 0xffffff,
+          specular: 0x111111,
+          shininess: 200,
+        });
+        const objLoader1 = new OBJLoader();
+        objLoader1.load("Segmentation.obj", (object) => {
+        const geometry = object.children[0].geometry;
+        object = new THREE.Mesh(geometry, material);
+        object.position.set(10, 1449, -100);
+        object.isMoving = false;
+        scene.add(object)
+      });
+
+      const objLoader2 = new OBJLoader();
+        objLoader2.load("1.obj", (object) => {
+        const material = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+        const geometry = object.children[0].geometry;
+        mesh1 = new THREE.Mesh(geometry, material);
+        mesh1.position.set(0, 1800, -100);
+        mesh1.rotateZ(Math.PI);
+        mesh1.isMoving = false;
+        scene.add(mesh1);
+      });
+
+      const objLoader3 = new OBJLoader();
+        objLoader3.load("2.obj", (object) => {
+        const material = new THREE.MeshPhongMaterial({ color: 0xCD853F });
+        const geometry = object.children[0].geometry;
+        mesh2 = new THREE.Mesh(geometry, material);
+        mesh2.rotateZ(Math.PI);
+        mesh2.position.set(0, 1800, -100); 
+        mesh2.isMoving = false;
+        scene.add(mesh2);
+      });
+
+      const objLoader4 = new OBJLoader();
+        objLoader4.load("3.obj", (object) => {
+        const material = new THREE.MeshPhongMaterial({ color: 0xDEB887 });
+        const geometry = object.children[0].geometry;
+        mesh3 = new THREE.Mesh(geometry, material);
+        mesh3.rotateZ(Math.PI);
+        mesh3.position.set(0, 1800, -100); 
+        mesh3.isMoving = false;
+        scene.add(mesh3);
+      });
+
+        const objLoader5 = new OBJLoader();
+        objLoader5.load("4.obj", (object) => {
+        const material = new THREE.MeshPhongMaterial({ color: 0xD2B48C });
+        const geometry = object.children[0].geometry;
+        mesh4 = new THREE.Mesh(geometry, material);
+        mesh4.rotateZ(Math.PI);
+        mesh4.position.set(0, 1800, -100); 
+        mesh4.isMoving = false;
+        scene.add(mesh4);
+        
+      });
+
+        const objLoader6 = new OBJLoader();
+        objLoader6.load("5.obj", (object) => {
+        const material = new THREE.MeshPhongMaterial({ color: 0xBC8F8F });
+        const geometry = object.children[0].geometry;
+        mesh5 = new THREE.Mesh(geometry, material);
+        mesh5.rotateZ(Math.PI);
+        mesh5.position.set(0, 1800, -100); 
+        mesh5.isMoving = false;
+        scene.add(mesh5);
+      });
+      
+      function getIntersectionPoint(meshA, meshB) {
+        // Update matrixWorld for both meshes to make sure the bounding boxes are up-to-date
+        meshA.updateMatrixWorld();
+        meshB.updateMatrixWorld();
+
+        // Calculate the bounding boxes if not already calculated
+        const boxA = new THREE.Box3().setFromObject(meshA);
+        const boxB = new THREE.Box3().setFromObject(meshB);
+
+    // Check if the bounding boxes intersect
+        if (boxA.intersectsBox(boxB)) {
+        // Calculate the intersection point
+        const intersectionPoint = boxA.getCenter(new THREE.Vector3()).add(boxB.getCenter(new THREE.Vector3())).multiplyScalar(0.5);
+
+        const centerDistanceY = Math.abs(boxA.getCenter(new THREE.Vector3()).y - boxB.getCenter(new THREE.Vector3()).y);
+        const halfSizeSumY = (boxA.getSize(new THREE.Vector3()).y + boxB.getSize(new THREE.Vector3()).y) / 2;
+
+        // Define an epsilon value to account for floating-point inaccuracies
+        const epsilon = 73;
+
+        // If the bounding boxes are just touching in the Y-direction, return the intersection point
+        if (Math.abs(centerDistanceY - halfSizeSumY) < epsilon) {
+            return intersectionPoint;
+        }
+        }
+
+        return null;
+        }
+
+        controller = {
+          color: 0xffffff, // we can use this single color
+          // container for all colors in the scene
+          // if we modify the onChange callback (see below)
+        };
+        let guiControls = {
+            movePart1: false,
+            movePart2: false,
+            movePart3: false,
+            movePart4: false,
+            movePart5: false
+        };
+        const gui = new GUI();
+        function resetMesh(mesh) {
+        mesh.position.set(0, 1800, -100);
+        mesh.rotation.set(0, 0, Math.PI);
+        }
+        gui.add(guiControls, "movePart1").name("Move Part 1").onChange(function(value) {
+          if (value) {
+            mesh1.isMoving = true;
+          } else {
+            mesh1.isMoving = false;
+            resetMesh(mesh1);
+          }
+        });
+        gui.add(guiControls, "movePart2").name("Move Part 2").onChange(function(value) {
+          if (value) {
+            mesh2.isMoving = true;
+          } else {
+            mesh2.isMoving = false;
+            resetMesh(mesh2);
+          }
+        });
+        gui.add(guiControls, "movePart3").name("Move Part 3").onChange(function(value) {
+          if (value) {
+            mesh3.isMoving = true;
+          } else {
+            mesh3.isMoving = false;
+            resetMesh(mesh3);
+          }
+        });
+        gui.add(guiControls, "movePart4").name("Move Part 4").onChange(function(value) {
+          if (value) {
+            mesh4.isMoving = true;
+          } else {
+            mesh4.isMoving = false;
+            resetMesh(mesh4);
+          }
+        });
+        gui.add(guiControls, "movePart5").name("Move Part 5").onChange(function(value) {
+          if (value) {
+            mesh5.isMoving = true;
+          } else {
+            mesh5.isMoving = false;
+            resetMesh(mesh5);
+          }
+        });
+        const ambientFolder = gui.addFolder("Ambient Light");
+        ambientFolder
+          .addColor(controller, "color")
+          .onChange(function (value) {
+            ambientLight.color.setHex(value);
+          });
+        ambientFolder.open();
+
+        const directionalFolder = gui.addFolder("Directional Light");
+        directionalFolder
+          .addColor(controller, "color")
+          .onChange(function (value) {
+            directionalLight.color.setHex(value);
+          });
+        directionalFolder.add(directionalLight.position, "x", -100, 100);
+        directionalFolder.add(directionalLight.position, "y", -100, 100);
+        directionalFolder.add(directionalLight.position, "z", -100, 100);
+        directionalFolder.open();
+
+        gui.open();
+
+        // Initialize trackball controls and start animation loop
+        controls = new TrackballControls(camera, renderer.domElement);
+        controls.rotateSpeed = 1.0;
+        controls.zoomSpeed = 5.0;
+        controls.panSpeed = 0.8;
+        let mesh1Max = -96;
+
+        function isIntersecting(object1, object2, threshold) {
+        object1.geometry.computeBoundingBox();
+        object2.geometry.computeBoundingBox();
+        object1.updateMatrixWorld();
+        object2.updateMatrixWorld();
+
+        const box1 = object1.geometry.boundingBox.clone().applyMatrix4(object1.matrixWorld);
+        const box2 = object2.geometry.boundingBox.clone().applyMatrix4(object2.matrixWorld);
+
+        if (threshold) {
+            box1.expandByScalar(threshold);
+            box2.expandByScalar(threshold);
+        }
+
+        return box1.intersectsBox(box2);
+        }
+
+
+        let mesh1Min = -104;
+        let mesh2Max = 1800.5;
+        let mesh2Min = 1799.5;
+        let y = 1800;
+        let mesh3Min = -10;
+        let mesh3Max = 10;
+        let prevState = null;
+        // Define an update function to move the mesh up and down
+        
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Move the parts based on the checkbox values and if meshes are defined
+            if (guiControls.movePart1 && mesh1) {
+            if (mesh1.position.z >= mesh1Max) {
+              mesh1.isMoving = false;
+            }
+            if (mesh1.position.z <= mesh1Min) {
+              mesh1.isMoving = true;
+            }
+            if (mesh1.isMoving) {
+              
+              mesh1.position.z += 0.05;
+            } else {
+              
+              mesh1.position.z -= 0.05;
+            }
+          }
+          if (guiControls.movePart2 && mesh2) {
+            if (mesh2.position.y >= mesh2Max) {
+              mesh2.isMoving = false;
+            }
+            if (mesh2.position.y <= mesh2Min) {
+              mesh2.isMoving = true;
+            }
+            if (mesh2.isMoving) {
+              mesh2.position.y += 0.01;
+              mesh2.rotation.y += 0.01;
+            } else {
+              mesh2.position.y -= 0.01;
+              mesh2.rotation.y -= 0.01;
+            }
+          }
+          if (guiControls.movePart3 && mesh3) {
+            if (mesh3.position.z >= mesh1Max) {
+              mesh3.isMoving = false;
+            }
+            if (mesh3.position.z <= mesh1Min) {
+              mesh3.isMoving = true;
+            }
+            if (mesh3.isMoving) {
+              mesh3.position.z += 0.1;
+              
+            } else {
+              mesh3.position.z -= 0.1;
+              
+            }
+          }
+            if (guiControls.movePart4 && mesh4) {
+                if (mesh4.position.x >= mesh3Max) {
+                    mesh4.isMoving = false;
+                }
+                if (mesh4.position.x <= mesh3Min) {
+                mesh4.isMoving = true;
+                }
+                if (mesh4.isMoving) {
+                mesh4.position.x += 0.7;
+                } else {
+                mesh4.position.x -= 0.7;
+                }
+            }
+
+            if (guiControls.movePart5 && mesh5) {
+                if (mesh5.position.x <= mesh3Min) {
+                    mesh5.isMoving = false;
+                }
+            if (mesh5.position.x >= mesh3Max) {
+              mesh5.isMoving = true;
+            }
+            if (mesh5.isMoving) {
+                mesh5.position.x -= 0.7;
+            } else {
+              mesh5.position.x += 0.7;
+            }
+        }
+            
+            // Update the PointLight position
+            if (mesh1 && mesh2) {
+                mesh1.updateMatrixWorld();
+                mesh2.updateMatrixWorld();
+
+                const intersectionPoint = getIntersectionPoint(mesh1, mesh2);
+                if (intersectionPoint) {
+                    pointLight.position.copy(intersectionPoint);
+                    pointLight.visible = true;
+                    console.log("Mesh 1 and Mesh 2 are touching. Point light is active.", intersectionPoint);
+                } else {
+                    pointLight.visible = false;
+                    console.log("Mesh 1 and Mesh 2 are not touching. Point light is inactive.");
+                }
+            }
+            const infoElement = document.getElementById("info");
+            infoElement.innerHTML = "";
+
+            const objects = [mesh1, mesh2, mesh3, mesh4, mesh5];
+            const threshold = -20;
+
+            
+            for (let i = 0; i < objects.length; i++) {
+            for (let j = i + 1; j < objects.length; j++) {
+                if (objects[i] && objects[j] && isIntersecting(objects[i], objects[j], threshold)) { 
+                    console.log(`Threshold: ${threshold}`);
+
+                // Log the bounding boxes of the intersecting meshes
+                console.log(`Mesh ${i + 1} bounding box:`, objects[i].geometry.boundingBox.clone().applyMatrix4(objects[i].matrixWorld));
+                console.log(`Mesh ${j + 1} bounding box:`, objects[j].geometry.boundingBox.clone().applyMatrix4(objects[j].matrixWorld));// Adjust the threshold value
+                infoElement.innerHTML += `Mesh ${i + 1} is touching Mesh ${j + 1}!<br>`;
+                }
+            }
+            }
+
+
+            if (mesh2 && guiControls.movePart2) {
+                const rotationAngle = mesh2.rotation.y ? (mesh2.rotation.y * (180 / Math.PI)).toFixed(2) : 0;
+                infoElement.innerHTML += `Mesh 2 is rotating. Rotation angle: ${rotationAngle}°`;
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+            }
+
+
+        animate(); // Call the animate function to start the animation loop
+      };
+    </script>
+  </head>
+  <body>
+    <div id="info" style="position: absolute; top: 20px; left: 20px; color: white; font-size: 14px;"></div>
+  </body>
+</html>
+
+       

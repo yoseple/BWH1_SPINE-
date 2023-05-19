@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>My 3D Model</title>
+    <script type="module">
+      import * as THREE from "https://cdn.skypack.dev/three@0.136.0/build/three.module.js";
+      import { GUI } from "https://cdn.skypack.dev/dat.gui@0.7.7/build/dat.gui.module.js";
+      import { OrbitControls } from "https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/OrbitControls.js";
+      import { OBJLoader } from "https://cdn.skypack.dev/three@0.136.0/examples/jsm/loaders/OBJLoader.js";
+      import * as CANNON from "https://unpkg.com/cannon-es@0.19.0/dist/cannon-es.js";
+
+      // Set up renderer
+      const renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      // Set up scene
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 10000);
+      const orbit = new OrbitControls(camera, renderer.domElement);
+      camera.position.set(0, 300, -500);
+      orbit.update();
+
+      // Add lights
+      const ambientLight = new THREE.AmbientLight();
+      scene.add(ambientLight);
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 3.0);
+      directionalLight.position.set(10, 100, -100);
+      scene.add(directionalLight);
+
+      // Initialize Cannon.js physics world
+      const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.81, 0) });
+
+      // Set up material for 3D objects
+      const material = new THREE.MeshPhysicalMaterial({ color: 0x888888 });
+
+      // Load the OBJ model
+      const loader = new OBJLoader();
+      loader.load("Test.obj", (object) => {
+        const parentObject = new THREE.Object3D();
+        const parentBody = new CANNON.Body({ mass: 1, restitution: 0.5 });
+
+        object.traverse((child) => {
+          if (child.isMesh) {
+            const tempMesh = child.clone();
+            parentObject.add(tempMesh);
+          }
+        });
+
+        
+
+        const center = new THREE.Vector3();
+        parentObject.getWorldPosition(center);
+
+        
+        const faces = parentObject.geometry.faces;
+        const vertices = parentObject.geometry.vertices;
+
+        const verticesWorld = vertices.map((vertex) => {
+          const worldVertex = vertex.clone();
+          parentObject.localToWorld(worldVertex);
+          return new CANNON.Vec3(worldVertex.x, worldVertex.y, worldVertex.z);
+        });
+        // Create the Cannon.js shape and body for the parent object
+        const shape = new CANNON.Compound();
+        parentObject.children.forEach((child) => {
+          const childShape = new CANNON.Box(new CANNON.Vec3().copy(child.geometry.boundingBox.getSize(new THREE.Vector3()).multiplyScalar(0.5)));
+          const offset = new CANNON.Vec3().copy(child.position);
+          shape.addChild(childShape, offset);
+        });
+        parentBody.addShape(shape);
+
+        world.addBody(parentBody);
+
+
+        // Set up the GUI for individual child objects
+const gui = new GUI();
+const folder = gui.addFolder("Parts");
+
+parentObject.children.forEach((child, index) => {
+  const partFolder = folder.addFolder(`Part ${index + 1}`);
+  const eulerOrder = "ZYX";
+  const currentRotation = new THREE.Euler().setFromQuaternion(child.quaternion, eulerOrder);
+  partFolder.add(currentRotation, "x", -Math.PI, Math.PI, 0.01).name("Rotation X");
+  partFolder.add(currentRotation, "y", -Math.PI, Math.PI, 0.01).name("Rotation Y");
+  partFolder.add(currentRotation, "z", -Math.PI, Math.PI, 0.01).name("Rotation Z");
+  partFolder.open();
+});
+
+// Set up animation loop
+const timeStep = 1 / 60;
+function animate() {
+  // Step physics world
+  world.step(timeStep);
+
+  // Update parent object position and rotation
+  parentObject.position.copy(parentBody.position);
+  parentObject.quaternion.copy(parentBody.quaternion);
+
+  // Update child object rotations from GUI controls
+  parentObject.children.forEach((child, index) => {
+    const eulerOrder = "ZYX";
+    const currentRotation = new THREE.Euler().setFromQuaternion(child.quaternion, eulerOrder);
+    const childControls = folder.__folders[`Part ${index + 1}`];
+    currentRotation.x = childControls.__controllers[0].object["x"];
+    currentRotation.y = childControls.__controllers[1].object["y"];
+    currentRotation.z = childControls.__controllers[2].object["z"];
+    child.quaternion.setFromEuler(currentRotation);
+  });
+
+  renderer.render(scene, camera);
+}
+
+renderer.setAnimationLoop(animate);
+      });
+
+      window.addEventListener("resize", function () {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    </script>
+  </head>
+  <body></body>
+</html>
+

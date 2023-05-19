@@ -1,0 +1,214 @@
+<html>
+  <head>
+    <title>My 3D Model</title>
+    <script type="module">
+        import * as THREE from "https://cdn.skypack.dev/three@0.136.0/build/three.module.js";
+        import { GUI } from "https://cdn.skypack.dev/dat.gui@0.7.7/build/dat.gui.module.js";
+        import { TrackballControls } from "https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/TrackballControls.js";
+        import {OrbitControls} from "https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/OrbitControls.js";
+        import { STLLoader } from "https://cdn.skypack.dev/three@0.136.0/examples/jsm/loaders/STLLoader.js";
+        import { OBJLoader } from "https://cdn.skypack.dev/three@0.136.0/examples/jsm/loaders/OBJLoader.js";
+        import * as CANNON from 'https://unpkg.com/cannon-es@0.19.0/dist/cannon-es.js'
+
+        // webgl 
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth,window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        
+        // scene
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth/window.innerHeight,
+            0.01,
+            10000
+        );
+        // Set up OrbitControls
+        const orbit = new OrbitControls(camera,renderer.domElement);
+        camera.position.set(0,300,-500);
+        orbit.update();
+
+        //Add ambient and directional light 
+        const ambientLight = new THREE.AmbientLight();
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight( 0xffffff, 3.0 );
+        directionalLight.position.set( 10, 100, -100 );
+        scene.add( directionalLight );
+        
+        //INitialize Cannon.js physics world
+        const world = new CANNON.World({
+          gravity : new CANNON.Vec3(0,-9.81,0)
+        });
+        // Add contact material to improve collision stability
+        const defaultMaterial = new CANNON.Material('defaultMaterial');
+        const contactMaterial = new CANNON.ContactMaterial(defaultMaterial, defaultMaterial, {
+          friction: 0.5,
+          restitution: 0.7,
+          contactEquationStiffness: 1e9,
+          contactEquationRelaxation: 4,
+        });
+        world.addContactMaterial(contactMaterial);
+        // Increase solver iterations to improve simulation stability
+        world.solver.iterations = 20;
+        
+        // Set up material for 3D objects
+        const material = new THREE.MeshPhysicalMaterial({ color: 0x888888 });
+        const objectFiles = ['Test.obj', 'Segmentation.obj'];
+        const loaders = objectFiles.map(() => new OBJLoader());
+        const shapes = objectFiles.map(() => []);
+        const bodies = objectFiles.map(() => []);
+        const meshes = objectFiles.map(() => []);
+        const centerOfMasses = objectFiles.map(() => []);
+        // Initialize controls array for GUI
+        const controls = objectFiles.map(() => ({
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: -20, y: -20, z: 0 }
+        }));
+
+
+        // Create ground plane for the scene
+        const groundGeometry = new THREE.PlaneGeometry(1000, 1000, 50, 50);
+        const groundMaterial = new THREE.MeshPhongMaterial({ color: 0xd47b4a });
+        const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
+        groundMesh.receiveShadow = true;
+        scene.add(groundMesh);
+
+        // Add ground plance to Cannon.js physics world 
+        const groundShape = new CANNON.Plane();
+        const groundBody = new CANNON.Body({ mass: 0 });
+        groundBody.addShape(groundShape);
+        groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+        world.addBody(groundBody);
+        let loadedCount = 0;
+              function onObjectLoaded() {
+                loadedCount++;
+
+                // Check if both objects have been loaded
+                if (loadedCount === objectFiles.length) {
+                  // Create a distance constraint between the two objects
+                  const bodyA = bodies[0][0];
+                  const bodyB = bodies[1][0];
+                  const distance = bodyA.position.distanceTo(bodyB.position);
+                  const constraint = new CANNON.DistanceConstraint(bodyA, bodyB, distance, 1e6);
+
+                  // Add the constraint to the world
+                  world.addConstraint(constraint);
+                }
+              }
+        // LOad and process 3D models 
+        objectFiles.forEach((file, i) => {
+          loaders[i].load(file, (object) => {
+            object.children.forEach((child) => {
+              const geometry = child.geometry;
+              const mesh = new THREE.Mesh(geometry, material);
+              meshes[i].push(mesh);
+              scene.add(mesh);
+          
+              // Calculate bounding box and center of mass
+              const boundingBox = new THREE.Box3().setFromObject(child);
+              const centerOfMass = new THREE.Vector3();
+              boundingBox.getCenter(centerOfMass);
+              console.log(`BoundingBox of ${file}:`, boundingBox);
+              centerOfMasses[i].push(centerOfMass);
+              console.log(`CenterOfMass of ${file}:`, centerOfMass);
+
+              // Create Cannon.js shape based on bounding box
+              const width = boundingBox.max.x - boundingBox.min.x;
+              const height = boundingBox.max.y - boundingBox.min.y;
+              const depth = boundingBox.max.z - boundingBox.min.z;
+              const shape = new CANNON.Box(new CANNON.Vec3(width / 2, height / 2, depth / 2));
+              const body = new CANNON.Body({
+                mass: 10,
+                restitution: 0.3,
+                material: defaultMaterial,
+              });
+
+
+              // Set initial position for each object
+              if (i === 0) {
+                  body.position.set(0,0,0);
+              } else if (i === 1) {
+                  body.position.set(0,0,0);
+              }
+
+
+              const offset = new CANNON.Vec3();
+              offset.copy(centerOfMass);
+              body.addShape(shape, offset.vsub(centerOfMass));
+
+              shapes[i].push(shape);
+              bodies[i].push(body);
+              world.addBody(body);
+
+            });
+            onObjectLoaded();
+          });
+        });
+        
+        // Set up animation loop 
+        const timeStep = 1 / 120 ;
+        function animate() {
+        // Step physics world
+        //world.step(timeStep);
+        // Update ground mesh position and rotation
+        groundMesh.position.copy(groundBody.position);
+        groundMesh.quaternion.copy(groundBody.quaternion);
+        // Update 3D object meshes position and rotation
+        for (let i = 0; i < objectFiles.length; i++) {
+          for (let j = 0; j < meshes[i].length; j++) {
+            meshes[i][j].position.copy(bodies[i][j].position);
+            meshes[i][j].quaternion.copy(bodies[i][j].quaternion);
+          }
+        }
+
+        renderer.render(scene, camera);
+      }
+
+
+        renderer.setAnimationLoop(animate);   
+        window.addEventListener('resize',function(){
+          camera.aspect = window.innerWidth / window.innerHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(window.innerWidth,window.innerHeight);
+        });
+            // Create GUI interface
+    const gui = new GUI();
+    objectFiles.forEach((file, i) => {
+      const folder = gui.addFolder(file);
+      folder.add(controls[i].position, "x", -500, 500).onChange((value) => {
+        bodies[i].forEach((body) => {
+          body.position.x = value;
+        });
+      });
+      folder.add(controls[i].position, "y", -500, 500).onChange((value) => {
+        bodies[i].forEach((body) => {
+          body.position.y = value;
+        });
+      });
+      folder.add(controls[i].position, "z", -500, 500).onChange((value) => {
+        bodies[i].forEach((body) => {
+          body.position.z = value;
+        });
+      });
+      folder.add(controls[i].rotation, "x", -Math.PI, Math.PI).onChange((value) => {
+        bodies[i].forEach((body) => {
+          body.quaternion.setFromEuler(new THREE.Euler(value, controls[i].rotation.y, controls[i].rotation.z, 'XYZ'));
+        });
+      });
+      folder.add(controls[i].rotation, "y", -Math.PI, Math.PI).onChange((value) => {
+        bodies[i].forEach((body) => {
+          body.quaternion.setFromEuler(new THREE.Euler(controls[i].rotation.x, value, controls[i].rotation.z, 'XYZ'));
+        });
+      });
+      folder.add(controls[i].rotation, "z", -Math.PI, Math.PI).onChange((value) => {
+        bodies[i].forEach((body) => {
+          body.quaternion.setFromEuler(new THREE.Euler(controls[i].rotation.x, controls[i].rotation.y, value, 'XYZ'));
+        });
+      });
+      folder.open();
+    });
+  </script>
+</head>
+<body>
+</body>
+</html>
